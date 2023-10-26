@@ -161,16 +161,19 @@ class IFBaseModule:
         else:
             list_text_emb.append(
                 self.zero_emb.unsqueeze(0).repeat(batch_size, 1, 1).to(self.device, dtype=self.model.dtype))
+        # 对text condition 作 classifier free guidance 生成的时候，为了生成一张图，需要对condition，unconditional各跑一遍unet model，这里还支持pos_cond，所以可以有三路（记为 N）。
 
         model_kwargs = dict(
-            text_emb=torch.cat(list_text_emb, dim=0).to(self.device, dtype=self.model.dtype),
+            text_emb=torch.cat(list_text_emb, dim=0).to(self.device, dtype=self.model.dtype), # 对list_text_emb 作 torch.cat 后，text_emb 已经是 batch_size * N大小了
             timestep_text_emb=timestep_text_emb,
             use_cache=True,
         )
         if low_res is not None:
             if blur_sigma is not None:
                 low_res = T.GaussianBlur(3, sigma=(blur_sigma, blur_sigma))(low_res)
-            model_kwargs['low_res'] = torch.cat([low_res]*bs_scale, dim=0).to(self.device)
+            model_kwargs['low_res'] = torch.cat([low_res]*bs_scale, dim=0).to(self.device) # 对于stage2/stage3的low_res condition，并不做classifier free guidance，故而不必置零（或置为negative）
+                                                                                           # 也就是说，对于超分类型，所拼的低分辨率condition图，训的时候不用做0.1概率的置零dropout，生成时也不用置零。github上imagen-pytorch的实现，也是这样处理的
+                                                                                           # 另外再《stable diffusion》paper中，也只是多text2img生成用了classifier free guidance，对于超分并没用CFG
             model_kwargs['aug_level'] = aug_level
 
         if support_noise is None:
